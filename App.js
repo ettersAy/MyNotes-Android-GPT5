@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { SafeAreaView, View, Text, TextInput, Pressable, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, Pressable, StyleSheet, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
 import { SAVE_DEBOUNCE_MS, STORAGE_KEY, CLIENT_ID } from './src/constants';
@@ -27,6 +28,8 @@ export default function App() {
   const [state, setState] = useState(notesRef.current.getState());
   const [status, setStatus] = useState({ type: null, msg: '' });
   const [menuOpen, setMenuOpen] = useState(false);
+  const [draftTitle, setDraftTitle] = useState('');
+  const [draftContent, setDraftContent] = useState('');
 
   // Theme
   const theme = useMemo(() => getTheme(state.theme), [state.theme]);
@@ -85,12 +88,13 @@ export default function App() {
       const saver = debounce((val) => {
         notesRef.current.updateTitle(noteId, val);
         setStatus({ type: 'saved', msg: 'Saved' });
+        refresh();
         persist();
       }, SAVE_DEBOUNCE_MS);
       titleSaversRef.current.set(noteId, saver);
     }
     return titleSaversRef.current.get(noteId);
-  }, [persist]);
+  }, [persist, refresh]);
 
   const onTitleInput = useCallback((id, value) => {
     setStatus({ type: 'saving', msg: 'Saving...' });
@@ -188,11 +192,18 @@ export default function App() {
     );
   }, [persist, refresh]);
 
+  // Sync drafts when the selected note changes
+  useEffect(() => {
+    const sel = notesRef.current.getSelected();
+    setDraftTitle((sel && sel.title) || '');
+    setDraftContent((sel && sel.content) || '');
+  }, [state.selectedId]);
+
   const selected = notesRef.current.getSelected();
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.colors.background }]}>
-      <StatusBar style={theme.mode === 'dark' ? 'light' : 'dark'} />
+      <StatusBar style={theme.mode === 'dark' ? 'light' : 'dark'} backgroundColor={theme.colors.background} translucent={false} />
 
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: theme.colors.border }]}>
@@ -208,8 +219,11 @@ export default function App() {
             styles.headerTitleInput,
             { color: theme.colors.text, backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border }
           ]}
-          value={(selected && selected.title) || ''}
-          onChangeText={(txt) => selected && onTitleInput(selected.id, txt)}
+          value={draftTitle}
+          onChangeText={(txt) => {
+            setDraftTitle(txt);
+            selected && onTitleInput(selected.id, txt);
+          }}
           placeholder="Untitled note"
           placeholderTextColor={theme.colors.subtext}
         />
@@ -233,8 +247,11 @@ export default function App() {
 
       {/* Editor */}
       <Editor
-        value={(selected && selected.content) || ''}
-        onChangeText={onContentChange}
+        value={draftContent}
+        onChangeText={(txt) => {
+          setDraftContent(txt);
+          onContentChange(txt);
+        }}
         theme={theme}
       />
 
