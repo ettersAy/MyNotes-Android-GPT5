@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
 import { SAVE_DEBOUNCE_MS, STORAGE_KEY, CLIENT_ID } from './src/constants';
@@ -202,10 +202,11 @@ export default function App() {
   const selected = notesRef.current.getSelected();
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: theme.colors.background }]}>
-      <StatusBar style={theme.mode === 'dark' ? 'light' : 'dark'} backgroundColor={theme.colors.background} translucent={false} />
+    <SafeAreaProvider>
+      <SafeAreaView style={[styles.safe, { backgroundColor: theme.colors.background }]}>
+        <StatusBar style={theme.mode === 'dark' ? 'light' : 'dark'} backgroundColor={theme.colors.background} translucent={false} />
 
-      {/* Header */}
+        {/* Header */}
       <View style={[styles.header, { borderBottomColor: theme.colors.border }]}>
         <Pressable
           onPress={() => setMenuOpen(true)}
@@ -271,7 +272,8 @@ export default function App() {
         theme={theme}
         currentTheme={state.theme}
       />
-    </SafeAreaView>
+      </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 
