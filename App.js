@@ -1,11 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { SafeAreaView, View, Text, Pressable, StyleSheet, Alert } from 'react-native';
+import { SafeAreaView, View, Text, TextInput, Pressable, StyleSheet, Alert } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 import { SAVE_DEBOUNCE_MS, STORAGE_KEY, CLIENT_ID } from './src/constants';
 import { debounce } from './src/utils/debounce';
 import { getTheme } from './src/theme';
-import Tabs from './src/components/Tabs';
 import Editor from './src/components/Editor';
 import OptionsMenu from './src/components/OptionsMenu';
 import StatusText from './src/components/StatusText';
@@ -197,33 +196,40 @@ export default function App() {
 
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: theme.colors.border }]}>
-        <Text style={[styles.title, { color: theme.colors.text }]}>MyNotes</Text>
-        <View style={styles.headerActions}>
+        <Pressable
+          onPress={() => setMenuOpen(true)}
+          style={({ pressed }) => [styles.headerIconBtn, pressed && { opacity: 0.6 }]}
+        >
+          <Text style={[styles.headerBtnText, { color: theme.colors.text }]}>≡</Text>
+        </Pressable>
+
+        <TextInput
+          style={[
+            styles.headerTitleInput,
+            { color: theme.colors.text, backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border }
+          ]}
+          value={(selected && selected.title) || ''}
+          onChangeText={(txt) => selected && onTitleInput(selected.id, txt)}
+          placeholder="Untitled note"
+          placeholderTextColor={theme.colors.subtext}
+        />
+
+        <View style={styles.headerRight}>
           <Pressable
-            onPress={addNote}
+            onPress={() => selected && onCopyNote(selected.id)}
             style={({ pressed }) => [styles.headerBtn, pressed && { opacity: 0.6 }]}
           >
-            <Text style={[styles.headerBtnText, { color: theme.colors.primary }]}>＋</Text>
+            <Text style={[styles.headerBtnText, { color: theme.colors.text }]}>📋</Text>
           </Pressable>
           <Pressable
-            onPress={() => setMenuOpen(true)}
+            onPress={() => selected && onDeleteNote(selected.id)}
             style={({ pressed }) => [styles.headerBtn, pressed && { opacity: 0.6 }]}
           >
-            <Text style={[styles.headerBtnText, { color: theme.colors.text }]}>⋮</Text>
+            <Text style={[styles.headerBtnText, { color: theme.colors.danger }]}>🗑</Text>
           </Pressable>
         </View>
       </View>
 
-      {/* Tabs */}
-      <Tabs
-        notes={state.notes}
-        selectedId={state.selectedId}
-        onSelect={selectNote}
-        onTitleInput={onTitleInput}
-        onCopy={onCopyNote}
-        onDelete={onDeleteNote}
-        theme={theme}
-      />
 
       {/* Editor */}
       <Editor
@@ -239,9 +245,12 @@ export default function App() {
       <OptionsMenu
         visible={menuOpen}
         onRequestClose={() => setMenuOpen(false)}
+        onAdd={addNote}
+        notes={state.notes}
+        selectedId={state.selectedId}
+        onSelect={(id) => { selectNote(id); setMenuOpen(false); }}
         onToggleTheme={toggleTheme}
         onCopyAll={copyAll}
-        onClearAll={clearAll}
         theme={theme}
         currentTheme={state.theme}
       />
@@ -254,20 +263,31 @@ const styles = StyleSheet.create({
     flex: 1
   },
   header: {
-    height: 48,
+    height: 56,
     paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     borderBottomWidth: 1
   },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-    flex: 1
+  headerIconBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    marginRight: 8,
+    borderRadius: 6
   },
-  headerActions: {
+  headerTitleInput: {
+    flex: 1,
+    height: 36,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 16
+  },
+  headerRight: {
     flexDirection: 'row',
-    alignItems: 'center'
+    alignItems: 'center',
+    marginLeft: 8
   },
   headerBtn: {
     paddingHorizontal: 8,
