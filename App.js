@@ -3,8 +3,7 @@ import { View, Text, TextInput, Pressable, StyleSheet, Alert } from 'react-nativ
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
-import { SAVE_DEBOUNCE_MS, STORAGE_KEY, CLIENT_ID } from './src/constants';
-import { debounce } from './src/utils/debounce';
+import { STORAGE_KEY, CLIENT_ID } from './src/constants';
 import { getTheme } from './src/theme';
 import Editor from './src/components/Editor';
 import OptionsMenu from './src/components/OptionsMenu';
@@ -34,9 +33,7 @@ export default function App() {
   // Theme
   const theme = useMemo(() => getTheme(state.theme), [state.theme]);
 
-  // Debouncers
-  const titleSaversRef = useRef(new Map());
-  const contentSaverRef = useRef(null);
+  // Manual save mode: no debouncers
 
   const persist = useCallback(async () => {
     const payload = {
@@ -83,39 +80,38 @@ export default function App() {
     }
   }, [persist, refresh]);
 
-  const debouncedTitleSaverFor = useCallback((noteId) => {
-    if (!titleSaversRef.current.has(noteId)) {
-      const saver = debounce((val) => {
-        notesRef.current.updateTitle(noteId, val);
-        setStatus({ type: 'saved', msg: 'Saved' });
-        refresh();
-        persist();
-      }, SAVE_DEBOUNCE_MS);
-      titleSaversRef.current.set(noteId, saver);
-    }
-    return titleSaversRef.current.get(noteId);
-  }, [persist, refresh]);
+  const isDirty = useMemo(() => {
+    const sel = notesRef.current.getSelected();
+    const t = (sel && sel.title) || '';
+    const c = (sel && sel.content) || '';
+    return draftTitle !== t || draftContent !== c;
+  }, [state.selectedId, draftTitle, draftContent]);
 
-  const onTitleInput = useCallback((id, value) => {
-    setStatus({ type: 'saving', msg: 'Saving...' });
-    debouncedTitleSaverFor(id)(value);
-  }, [debouncedTitleSaverFor]);
+  const saveDraft = useCallback(async () => {
+    const sel = notesRef.current.getSelected();
+    if (!sel) return;
+    notesRef.current.updateTitle(sel.id, draftTitle);
+    notesRef.current.updateContent(sel.id, draftContent);
+    await persist();
+    refresh();
+    setStatus({ type: 'saved', msg: 'Saved' });
+  }, [draftTitle, draftContent, persist, refresh]);
 
-  const onContentChange = useCallback((text) => {
-    setStatus({ type: 'saving', msg: 'Saving...' });
-    if (!contentSaverRef.current) {
-      contentSaverRef.current = debounce((val) => {
-        const sel = notesRef.current.getSelected();
-        if (!sel) return;
-        notesRef.current.updateContent(sel.id, val);
-        setStatus({ type: 'saved', msg: 'Saved' });
-        // Update tabs UI (timestamps/short titles)
-        refresh();
-        persist();
-      }, SAVE_DEBOUNCE_MS);
+  const confirmUnsavedThen = useCallback((proceed) => {
+    if (!isDirty) {
+      proceed && proceed();
+      return;
     }
-    contentSaverRef.current(text);
-  }, [persist, refresh]);
+    Alert.alert(
+      'Unsaved changes',
+      'You have unsaved changes. Save before leaving?',
+      [
+        { text: 'Discard', style: 'destructive', onPress: () => { proceed && proceed(); } },
+        { text: 'Save', onPress: async () => { await saveDraft(); proceed && proceed(); } },
+        { text: 'Cancel', style: 'cancel' }
+      ]
+    );
+  }, [isDirty, saveDraft]);
 
   const onCopyNote = useCallback(async (id) => {
     const note = notesRef.current.state.notes.find(n => n.id === id);
@@ -132,26 +128,45 @@ export default function App() {
   const onDeleteNote = useCallback((id) => {
     const note = notesRef.current.state.notes.find(n => n.id === id);
     if (!note) return;
-    Alert.alert(
-      'Delete note',
-      `Delete note "${note.title || 'Untitled'}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            notesRef.current.deleteNote(id);
-            if (notesRef.current.state.notes.length === 0) {
-              notesRef.current.ensureAtLeastOneNote();
+
+    const promptDelete = () => {
+      Alert.alert(
+        'Delete note',
+        `Delete note "${note.title || 'Untitled'}"?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: () => {
+              notesRef.current.deleteNote(id);
+              if (notesRef.current.state.notes.length === 0) {
+                notesRef.current.ensureAtLeastOneNote();
+              }
+              refresh();
+              persist();
             }
-            refresh();
-            persist();
           }
-        }
-      ]
-    );
-  }, [persist, refresh]);
+        ]
+      );
+    };
+
+    // If deleting the currently selected note and there are unsaved edits, confirm first
+    if (notesRef.current.state.selectedId === id && isDirty) {
+      Alert.alert(
+        'Unsaved changes',
+        'Save your changes before deleting?',
+        [
+          { text: 'Discard', style: 'destructive', onPress: () => promptDelete() },
+          { text: 'Save', onPress: async () => { await saveDraft(); promptDelete(); } },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
+      return;
+    }
+
+    promptDelete();
+  }, [persist, refresh, isDirty, saveDraft]);
 
   const toggleTheme = useCallback(() => {
     const next = state.theme === 'dark' ? 'light' : 'dark';
@@ -223,7 +238,7 @@ export default function App() {
           value={draftTitle}
           onChangeText={(txt) => {
             setDraftTitle(txt);
-            selected && onTitleInput(selected.id, txt);
+            setStatus({ type: null, msg: 'Unsaved changes' });
           }}
           placeholder="Untitled note"
           placeholderTextColor={theme.colors.subtext}
@@ -251,7 +266,7 @@ export default function App() {
         value={draftContent}
         onChangeText={(txt) => {
           setDraftContent(txt);
-          onContentChange(txt);
+          setStatus({ type: null, msg: 'Unsaved changes' });
         }}
         theme={theme}
       />
@@ -263,10 +278,20 @@ export default function App() {
       <OptionsMenu
         visible={menuOpen}
         onRequestClose={() => setMenuOpen(false)}
-        onAdd={addNote}
+        onAdd={() => {
+          confirmUnsavedThen(() => {
+            addNote();
+            setMenuOpen(false);
+          });
+        }}
         notes={state.notes}
         selectedId={state.selectedId}
-        onSelect={(id) => { selectNote(id); setMenuOpen(false); }}
+        onSelect={(id) => {
+          confirmUnsavedThen(() => {
+            selectNote(id);
+            setMenuOpen(false);
+          });
+        }}
         onToggleTheme={toggleTheme}
         onCopyAll={copyAll}
         theme={theme}
